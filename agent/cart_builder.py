@@ -38,6 +38,14 @@ def build_cart_from_candidates(
 
     cart = Cart(budget=budget, user_id=user_id, intent=intent)
 
+    if budget <= 0:
+        cart.add_note(
+            "budget_too_low",
+            "Please set a budget greater than ₹0 to build a cart.",
+        )
+        cart.recalculate_total()
+        return cart
+
     if not candidates:
         cart.recalculate_total()
         return cart
@@ -59,11 +67,20 @@ def build_cart_from_candidates(
 
     remaining = budget
     items_added = 0
+    out_of_stock: list[Product] = []
+    out_of_budget: list[Product] = []
+    in_stock_candidates = 0
 
     for product in ranked:
-        if items_added >= config.CART_MAX_ITEMS:
-            break
         if not product.in_stock:
+            out_of_stock.append(product)
+            continue
+
+        in_stock_candidates += 1
+
+        if items_added >= config.CART_MAX_ITEMS:
+            # Cart is already at the item cap; remaining in-stock items are
+            # left out for capacity reasons, not budget — don't flag them.
             continue
 
         desired_qty = int(quantities.get(product.product_id, 1) or 1)
@@ -78,7 +95,8 @@ def build_cart_from_candidates(
                 break
 
         if chosen_qty == 0:
-            # 3. Doesn't fit even at quantity 1 — skip.
+            # 3. Doesn't fit even at quantity 1 within the remaining budget.
+            out_of_budget.append(product)
             continue
 
         justification = justifications.get(product.product_id, "").strip()
@@ -102,6 +120,15 @@ def build_cart_from_candidates(
 
     cart.recalculate_total()
 
+    _record_skip_notes(
+        cart,
+        out_of_stock=out_of_stock,
+        out_of_budget=out_of_budget,
+        in_stock_candidates=in_stock_candidates,
+        items_added=items_added,
+        budget=budget,
+    )
+
     # 6. Hard constraint: total must never exceed budget.
     if not cart.is_within_budget():
         raise CartBudgetError(
@@ -109,3 +136,53 @@ def build_cart_from_candidates(
         )
 
     return cart
+
+
+# Show at most this many named items per note to avoid overwhelming the user.
+_MAX_NAMED_IN_NOTE = 4
+
+
+def _names(products: list[Product]) -> str:
+    names = [p.name for p in products[:_MAX_NAMED_IN_NOTE]]
+    extra = len(products) - len(names)
+    joined = ", ".join(f"“{n}”" for n in names)
+    if extra > 0:
+        joined += f" and {extra} more"
+    return joined
+
+
+def _record_skip_notes(
+    cart: Cart,
+    out_of_stock: list[Product],
+    out_of_budget: list[Product],
+    in_stock_candidates: int,
+    items_added: int,
+    budget: float,
+) -> None:
+    """Attach clear, customer-facing notes about anything left out."""
+    if out_of_stock:
+        cart.add_note(
+            "out_of_stock",
+            f"Out of stock right now, so we left it out: {_names(out_of_stock)}.",
+        )
+
+    if out_of_budget:
+        cheapest = min(out_of_budget, key=lambda p: p.price)
+        cart.add_note(
+            "out_of_budget",
+            (
+                f"Didn’t fit your ₹{budget:.0f} budget: {_names(out_of_budget)}. "
+                f"The cheapest of these is “{cheapest.name}” at "
+                f"₹{cheapest.price:.0f}."
+            ),
+        )
+
+    # Nothing made it into the cart even though relevant in-stock items existed.
+    if items_added == 0 and in_stock_candidates > 0:
+        cart.add_note(
+            "budget_too_low",
+            (
+                f"Your ₹{budget:.0f} budget is too low for these items — try "
+                "increasing it to build a cart."
+            ),
+        )

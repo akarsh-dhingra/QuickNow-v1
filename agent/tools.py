@@ -48,6 +48,16 @@ SEARCH_CATALOG_TOOL = {
                         "type": "integer",
                         "description": "Maximum products to return (default 15).",
                     },
+                    "include_out_of_stock": {
+                        "type": "boolean",
+                        "description": (
+                            "Set true when the customer names a specific "
+                            "product, so out-of-stock matches are also "
+                            "returned (each carries an 'in_stock' flag). Use "
+                            "this to tell the customer when a requested item "
+                            "is sold out."
+                        ),
+                    },
                 },
                 "required": ["tags"],
             }
@@ -157,8 +167,13 @@ def _handle_search_catalog(tool_input: dict) -> str:
     tags = tool_input.get("tags", []) or []
     category = tool_input.get("category")
     max_results = int(tool_input.get("max_results", 15) or 15)
+    include_out_of_stock = bool(tool_input.get("include_out_of_stock", False))
 
-    products = catalog.search_by_tags(tags, max_results=max_results)
+    products = catalog.search_by_tags(
+        tags,
+        max_results=max_results,
+        include_out_of_stock=include_out_of_stock,
+    )
     if category:
         products = [p for p in products if p.category == category]
 
@@ -212,6 +227,11 @@ def _handle_build_cart(
 
     products = catalog.get_by_ids(product_ids)
 
+    # Detect requested ids the catalog could not resolve, so the customer can
+    # be told instead of the item silently vanishing.
+    found_ids = {p.product_id for p in products}
+    not_found = [pid for pid in product_ids if pid and pid not in found_ids]
+
     # Apply agent-provided relevance scores so the greedy ranker can order
     # items by value-for-money.
     for p in products:
@@ -238,6 +258,17 @@ def _handle_build_cart(
         user_id=user_id,
         justifications=justifications,
     )
+
+    if not_found:
+        cart.add_note(
+            "not_found",
+            (
+                "We couldn’t find these in our catalog: "
+                + ", ".join(not_found[:5])
+                + "."
+            ),
+        )
+
     LAST_BUILT_CART["cart"] = cart
 
     return json.dumps(
@@ -260,6 +291,8 @@ def _handle_build_cart(
             "remaining_budget": cart.remaining_budget,
             "item_count": len(cart.items),
             "within_budget": cart.is_within_budget(),
+            # Surface customer-facing notes so the agent can mention them too.
+            "notes": cart.notes,
         }
     )
 

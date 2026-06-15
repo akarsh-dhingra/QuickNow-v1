@@ -44,8 +44,16 @@ def _scan_all(**scan_kwargs) -> list[dict]:
     return items
 
 
-def search_by_tags(tags: list[str], max_results: int = 20) -> list[Product]:
-    """Return in-stock products matching ANY of ``tags``.
+def search_by_tags(
+    tags: list[str],
+    max_results: int = 20,
+    include_out_of_stock: bool = False,
+) -> list[Product]:
+    """Return products matching ANY of ``tags``.
+
+    By default only in-stock products are returned (the useful set for a cart).
+    Pass ``include_out_of_stock=True`` to also surface unavailable matches so
+    the agent can tell the customer a specifically requested item is sold out.
 
     Results are sorted by the number of matching tags (descending) and capped
     at ``max_results``.
@@ -63,8 +71,9 @@ def search_by_tags(tags: list[str], max_results: int = 20) -> list[Product]:
         for tag in normalized:
             cond = Attr("tags").contains(tag)
             filter_expr = cond if filter_expr is None else (filter_expr | cond)
-        # Only in-stock items are useful for a cart.
-        filter_expr = filter_expr & Attr("in_stock").eq(True)
+        if not include_out_of_stock:
+            # Only in-stock items are useful for a cart.
+            filter_expr = filter_expr & Attr("in_stock").eq(True)
 
         raw_items = _scan_all(FilterExpression=filter_expr)
     except ClientError as exc:

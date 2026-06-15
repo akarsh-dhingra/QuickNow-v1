@@ -52,6 +52,18 @@ class Cart:
     user_id: str = ""
     intent: str = ""
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    # Customer-facing messages explaining why something is/isn't in the cart
+    # (e.g. out of stock, out of budget). Each note is {"type", "message"}.
+    notes: list[dict[str, str]] = field(default_factory=list)
+
+    def add_note(self, note_type: str, message: str) -> None:
+        """Record a customer-facing note, de-duplicating identical entries."""
+        note = {"type": str(note_type), "message": str(message)}
+        if note not in self.notes:
+            self.notes.append(note)
+
+    def clear_notes(self) -> None:
+        self.notes = []
 
     def add_item(self, item: CartItem) -> None:
         """Add a line item (or merge quantity if product already present)."""
@@ -67,10 +79,17 @@ class Cart:
         self.recalculate_total()
 
     def remove_item(self, product_id: str) -> None:
-        """Remove a line item by product_id and re-total."""
+        """Remove a line item by product_id and re-total.
+
+        Clears stale build notes, since they described a cart state that no
+        longer applies after a manual edit.
+        """
+        before = len(self.items)
         self.items = [
             it for it in self.items if it.product.product_id != product_id
         ]
+        if len(self.items) != before:
+            self.clear_notes()
         self.recalculate_total()
 
     def recalculate_total(self) -> None:
@@ -94,10 +113,17 @@ class Cart:
             "user_id": self.user_id,
             "intent": self.intent,
             "timestamp": self.timestamp,
+            "notes": [dict(n) for n in self.notes],
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Cart":
+        raw_notes = d.get("notes", []) or []
+        notes = [
+            {"type": str(n.get("type", "info")), "message": str(n.get("message", ""))}
+            for n in raw_notes
+            if isinstance(n, dict)
+        ]
         cart = cls(
             items=[CartItem.from_dict(i) for i in d.get("items", [])],
             budget=float(d.get("budget", 0) or 0),
@@ -106,6 +132,7 @@ class Cart:
             user_id=str(d.get("user_id", "")),
             intent=str(d.get("intent", "")),
             timestamp=str(d.get("timestamp", datetime.now().isoformat())),
+            notes=notes,
         )
         # Ensure derived fields are coherent even if persisted values drifted.
         cart.recalculate_total()

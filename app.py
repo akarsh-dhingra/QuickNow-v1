@@ -145,6 +145,22 @@ def _store_cart(cart: Cart | None) -> None:
     st.session_state.cart = cart.to_dict() if cart is not None else None
 
 
+# Map note types to a Streamlit renderer and an icon.
+_NOTE_STYLES = {
+    "out_of_stock": (st.warning, "📦"),
+    "out_of_budget": (st.warning, "💰"),
+    "budget_too_low": (st.info, "💡"),
+    "not_found": (st.info, "🔎"),
+}
+
+
+def _render_notes(cart: Cart) -> None:
+    """Show customer-facing notes (out of stock, over budget, etc.)."""
+    for note in cart.notes:
+        renderer, icon = _NOTE_STYLES.get(note.get("type", ""), (st.info, "ℹ️"))
+        renderer(f"{icon} {note.get('message', '')}")
+
+
 # ---------------------------------------------------------------------------
 # Agent invocation helpers
 # ---------------------------------------------------------------------------
@@ -308,6 +324,18 @@ with right:
             "</div>",
             unsafe_allow_html=True,
         )
+    elif not cart.items:
+        # Cart was built/edited but ended up empty (e.g. budget too low, every
+        # match out of stock, or the last item was removed). Explain why.
+        st.subheader("🛒 Your cart is empty")
+        if cart.notes:
+            _render_notes(cart)
+        else:
+            st.info(
+                "💡 We couldn’t add anything yet. Try increasing your budget "
+                "or describing what you need on the left, then click "
+                "**Build My Cart**."
+            )
     else:
         total = cart.total
         bud = cart.budget
@@ -336,6 +364,9 @@ with right:
 
         st.write("")
 
+        # Surface anything left out (out of stock / over budget / not found).
+        _render_notes(cart)
+
         for item in cart.items:
             with st.container(border=True):
                 top_l, top_r = st.columns([4, 1])
@@ -361,8 +392,10 @@ with right:
                         key=f"rm_{item.product.product_id}",
                         help="Remove item",
                     ):
+                        removed_name = item.product.name
                         cart.remove_item(item.product.product_id)
                         _store_cart(cart)
+                        st.toast(f"Removed “{removed_name}” from your cart.")
                         st.rerun()
                 st.markdown(
                     f'<div class="qm-just">💡 {item.justification}</div>',
