@@ -87,7 +87,7 @@ div[data-baseweb="slider"] div[role="slider"] {
     margin-bottom: 12px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-.qm-item-name { font-weight: 700; font-size: 16px; color: #0F1111; }
+.qm-item-name { font-weight: 700; font-size: 16px; }
 .qm-line-total { color: var(--amz-orange); font-weight: 800; font-size: 16px; text-align: right; }
 .qm-unit { color: var(--amz-gray); font-size: 13px; }
 .qm-pill {
