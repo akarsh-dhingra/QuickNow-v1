@@ -1,6 +1,6 @@
-# QuickMind — AI Shopping Agent
+# QuickNow — AI Shopping Agent
 
-**Amazon Now** is an intent-driven AI shopping agent for Amazon's quick-commerce
+**QuickNow** is an intent-driven AI shopping agent for Amazon's quick-commerce
 platform. A customer types a natural-language intent ("Quick dinner for 4
 people, budget ₹500") and clicks one button. An AWS Bedrock agent classifies the
 intent, queries a DynamoDB catalog, applies a greedy knapsack budget
